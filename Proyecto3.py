@@ -1,4 +1,3 @@
-from hashlib import new
 import json
 import math
 from collections import deque
@@ -9,6 +8,9 @@ from timeit import default_timer
 # Goal state of the puzzle
 goal = [1, 2, 3, 4, 5, 6, 7, 8, 0]
 str_goal = "".join(str(t) for t in goal)
+
+goal1 = [1, 2, 3, 4, 0, 0, 0, 0, 0]
+goal2 = [0, 0, 0, 0, 5, 6, 7, 8, 0]
 
 # Calculates the possible moves of the blank tile.
 def get_moves(puzzle):
@@ -71,6 +73,7 @@ def createDatabase():
     entries = set()
     visited = set()
     entriesM = set()
+    entriesDB = set()
 
     print("Generating database...")
     print("Collecting entries...")
@@ -95,14 +98,27 @@ def createDatabase():
 
             manhattanCost = sum(abs(b%3 - g%3) + abs(b//3 - g//3) for b, g in ((state.index(i), goal.index(i)) for i in range(1, 9)))
 
+            state_DB1 = deepcopy(state)
+            state_DB2 = deepcopy(state)
+
+            for tile in state:
+                if not (tile==1 or tile==2 or tile==3 or tile==4):
+                    state_DB1[state.index(tile)] = 0
+                else:
+                    state_DB2[state.index(tile)] = 0
+            print (state_DB1, state_DB2)
+
+
+            costDB1 = sum(abs(b%3 - g%3) + abs(b//3 - g//3) for b, g in ((state_DB1.index(i), goal1.index(i)) for i in range(1, 4)))
+            costDB2 = sum(abs(b%3 - g%3) + abs(b//3 - g//3) for b, g in ((state_DB2.index(i), goal2.index(i)) for i in range(1, 4)))
             
             entries.add(("".join(str(t) for t in state), cost))
             entriesM.add(("".join(str(t) for t in state), manhattanCost))
-            
+            entriesDB.add(("".join(str(t) for t in state), "".join(str(t) for t in state_DB1), costDB1, "".join(str(t) for t in state_DB2), costDB2))
             visited.add("".join(str(t) for t in state))
 
         # Exit loop when all permutations for the puzzle have been found.
-        if len(entries) >= 181440*2:
+        if len(entries) >= 362880:
             break
 
     print("Writing entries to database...")
@@ -113,23 +129,25 @@ def createDatabase():
             json.dump(entry, f)
             f.write("\n")
     
-    dic = {}
+    dic1 = {}
     with open("databaseM.json", "w") as f1:
         for entry in sorted(entriesM, key=lambda c: c[1]):
-            dic[entry[0]]= entry[1]
+            dic1[entry[0]]= entry[1]
     
-        json.dump(dic, f1)
+        json.dump(dic1, f1)
+
+    dic2 = {}
+    with open("DPDB.json", "w") as f2:
+        for entry in entriesDB:
+            dic2[entry[0]]= (entry[1], entry[2], entry[3], entry[4])
+    
+        json.dump(dic2, f2) 
     
 
     end = default_timer()
     minutes = math.floor((end-begin)/60)
     seconds = math.floor((end-begin) % 60)
     return "Generated database in " + str(minutes) + " minute(s) and " + str(seconds) + " second(s)."
-
-
-print(createDatabase())
-
-
 
 def searchSolutionManhattan(puzzle):
     
@@ -169,9 +187,50 @@ def searchSolutionManhattan(puzzle):
                 reached0[str_child] = child_cost0
                 reached_path[str_child] = reached_path[str_node] + ", " + findMove(m) 
                 frontier.put((child_cost, child))
+    return "\n"
+
+def searchSolutionDPDB(puzzle):
+    
+    #Read from archive 
+    f2 = open('DPDB.json')
+    js = json.load(f2)
+
+    str_puzzle = "".join(str(t) for t in puzzle)
+    start_cost = js[str_puzzle][2] + js[str_puzzle][4]
+    node = puzzle
+    frontier = PriorityQueue()
+    frontier.put((start_cost,node))
+    reached = {str_puzzle:start_cost}
+    reached0 = {str_puzzle: 0}
+    reached_path = {str_puzzle: "Start"}
+    num_nodes = 0
+
+    while not frontier.empty():
+        node = frontier.get()[1]
+        str_node = "".join(str(t) for t in node)
+        nodeCost = reached0.get(str_node)
+        
+        if (node == goal):
+            reached_path[str_goal] = reached_path[str_node] + ", End"
+            print ("Number of nodes expanded: ", reached0.__len__(), "\nPath cost: ",reached.get(str_goal), "\nPath: ",reached_path[str_goal])
+        
+        for m in get_moves(node):
+            child = move(node, m)
+            str_child = "".join(str(t) for t in child)
+            child_cost0 = nodeCost + 1
+            child_cost = js[str_child][2] + js[str_child][4] + child_cost0
+            if not reached.__contains__(str_child) or child_cost < reached.get(str_child):
+                num_nodes+=1
+                reached[str_child] = child_cost
+                reached0[str_child] = child_cost0
+                reached_path[str_child] = reached_path[str_node] + ", " + findMove(m) 
+                frontier.put((child_cost, child))
 
 
     return "\n"
 
-print ("\nManhattan heuristic")
+print(createDatabase())
+print ("\nManhattan heuristic") 
 print (searchSolutionManhattan([2, 3, 5, 1, 4, 7, 0, 8, 6]))
+print ("\nDPDB heuristic") 
+print (searchSolutionDPDB([2, 3, 5, 1, 4, 7, 0, 8, 6]))
